@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Kawaii Gallery Wall</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --bg: #0b0b10;
+    --bg-vignette: radial-gradient(circle at 50% 0%, #1a1420 0%, #0b0b10 55%);
+    --card-bg: rgba(255,255,255,0.05);
+    --card-border: rgba(255,255,255,0.09);
+    --accent: #ff8fc2;
+    --accent-2: #b39bff;
+    --text: #f2eefb;
+    --text-dim: rgba(242,238,251,0.55);
+    --radius: 18px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background: var(--bg-vignette);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--text);
+  }
+
+  /* ── ヘッダー ── */
+  header{
+    position:fixed; top:0; left:0; right:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 22px 36px;
+    background: linear-gradient(to bottom, rgba(11,11,16,0.92) 0%, rgba(11,11,16,0) 100%);
+    pointer-events:none;
+  }
+  header *{ pointer-events:auto; }
+  .brand{ display:flex; align-items:center; gap:14px; }
+  .brand-mark{
+    width:38px; height:38px; border-radius:11px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display:flex; align-items:center; justify-content:center;
+    font-size:19px; box-shadow: 0 4px 18px rgba(255,143,194,0.35);
+  }
+  .brand-text h1{ margin:0; font-size:19px; font-weight:700; letter-spacing:0.2px; }
+  .brand-text p{ margin:0; font-size:12px; color:var(--text-dim); font-weight:500; }
+  .status{ display:flex; align-items:center; gap:18px; font-size:13px; color:var(--text-dim); }
+  .live{ display:flex; align-items:center; gap:7px; font-weight:600; color:var(--text); }
+  .live-dot{
+    width:8px; height:8px; border-radius:50%; background:#5CF29B;
+    box-shadow:0 0 0 0 rgba(92,242,155,0.6);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(92,242,155,0.55); }
+    70%{ box-shadow:0 0 0 9px rgba(92,242,155,0); }
+    100%{ box-shadow:0 0 0 0 rgba(92,242,155,0); }
+  }
+  .gear{
+    width:34px; height:34px; border-radius:50%;
+    background: var(--card-bg); border:1px solid var(--card-border);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:15px; color:var(--text-dim);
+    transition: background 0.2s, color 0.2s;
+  }
+  .gear:hover{ background:rgba(255,255,255,0.1); color:var(--text); }
+
+  /* ── 作者バッジ(各カード左上、その作品を作った人の名前) ── */
+  .creator-badge{
+    position:absolute; top:9px; left:9px; z-index:3; max-width: calc(100% - 90px);
+    display:flex; align-items:center; gap:5px;
+    background: rgba(10,8,14,0.55); backdrop-filter: blur(6px);
+    border:1px solid rgba(255,255,255,0.18); border-radius:20px;
+    padding:5px 11px 5px 8px; font-size:12px; font-weight:700; color:var(--text);
+  }
+  .creator-badge .icon{ font-size:12px; flex-shrink:0; }
+  .creator-badge .cname{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* ── 投票ボタン ── */
+  .card{ position:relative; }
+  .vote-btn{
+    position:absolute; top:9px; right:9px; z-index:3;
+    display:flex; align-items:center; gap:5px;
+    background: rgba(10,8,14,0.55); backdrop-filter: blur(6px);
+    border:1px solid rgba(255,255,255,0.18); border-radius:20px;
+    padding:6px 11px; cursor:pointer; font-size:13px; font-weight:700; color:var(--text);
+    transition: background 0.18s, transform 0.12s, border-color 0.18s;
+  }
+  .vote-btn:hover{ transform: scale(1.06); }
+  .vote-btn .heart{ font-size:14px; filter: grayscale(1); opacity:0.7; transition: filter 0.15s, opacity 0.15s, transform 0.15s; }
+  .vote-btn.voted{ background: rgba(255,143,194,0.22); border-color: rgba(255,143,194,0.7); }
+  .vote-btn.voted .heart{ filter:none; opacity:1; transform: scale(1.15); }
+  .vote-btn .vcount{ min-width:11px; text-align:left; }
+
+  .card.leader{ border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,143,194,0.5), 0 8px 30px rgba(255,143,194,0.25); }
+  .card.leader .ribbon{
+    position:absolute; top:46px; right:9px; z-index:3;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color:#1a1420; font-weight:800; font-size:11px; padding:5px 10px 5px 8px;
+    border-radius:20px; box-shadow: 0 4px 14px rgba(255,143,194,0.4);
+  }
+
+  /* ── 設定パネル ── */
+  #settings{
+    position:fixed; top:78px; right:36px; z-index:60;
+    background: rgba(20,18,28,0.96); border:1px solid var(--card-border);
+    border-radius:16px; padding:18px 20px; width:280px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    display:none; flex-direction:column; gap:10px;
+    backdrop-filter: blur(20px);
+  }
+  #settings.open{ display:flex; }
+  #settings label{ font-size:11px; color:var(--text-dim); font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
+  #settings input{
+    background: rgba(255,255,255,0.06); border:1px solid var(--card-border);
+    color:var(--text); border-radius:9px; padding:9px 11px; font-size:13px; outline:none;
+  }
+  #settings input:focus{ border-color: var(--accent); }
+  #settings button{
+    margin-top:4px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border:none; color:#1a1420; font-weight:700; padding:9px; border-radius:9px;
+    cursor:pointer; font-size:13px;
+  }
+  #settings .hint{ font-size:11px; color:var(--text-dim); line-height:1.5; }
+
+  /* ── ギャラリー本体 ── */
+  #wall{
+    position:fixed; inset:0; display:flex; gap:22px;
+    padding: 110px 32px 32px 32px; height:100vh;
+  }
+  .column{ flex:1; overflow:hidden; position:relative; height:100%; mask-image: linear-gradient(to bottom, transparent 0, black 90px, black calc(100% - 40px), transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 90px, black calc(100% - 40px), transparent 100%); }
+  .track{ display:flex; flex-direction:column; gap:22px; will-change: transform; }
+  .card{
+    background: var(--card-bg); border:1px solid var(--card-border);
+    border-radius: var(--radius); overflow:hidden; cursor:pointer;
+    transition: transform 0.25s ease, border-color 0.25s ease;
+  }
+  .card:hover{ transform: scale(1.02); border-color: rgba(255,143,194,0.55); }
+  .card img{ display:block; width:100%; height:auto; }
+  .card .cap{ padding:9px 12px 11px; font-size:11px; color:var(--text-dim); display:flex; justify-content:space-between; gap:8px; }
+  .card .cap b{ color:var(--text); font-weight:600; }
+
+  #empty{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; text-align:center; padding:40px;
+  }
+  #empty h2{ margin:0; font-size:22px; }
+  #empty p{ margin:0; color:var(--text-dim); font-size:14px; max-width:420px; line-height:1.6; }
+
+  /* ── モーダル ── */
+  #modal-bg{
+    position:fixed; inset:0; background:rgba(6,5,10,0.82); backdrop-filter: blur(6px);
+    display:none; align-items:center; justify-content:center; z-index:100; padding:40px;
+  }
+  #modal-bg.open{ display:flex; animation: fadeIn 0.18s ease; }
+  @keyframes fadeIn{ from{ opacity:0; } to{ opacity:1; } }
+  #modal{
+    background:#141019; border:1px solid var(--card-border); border-radius:22px;
+    max-width:1000px; width:100%; max-height:88vh; display:flex; overflow:hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6); animation: pop 0.22s ease;
+  }
+  @keyframes pop{ from{ transform:scale(0.96); opacity:0; } to{ transform:scale(1); opacity:1; } }
+  #modal .left{ flex:1.1; background:#000; display:flex; align-items:center; justify-content:center; min-width:0; }
+  #modal .left img{ max-width:100%; max-height:88vh; object-fit:contain; }
+  #modal .right{ flex:1; padding:26px 26px 20px; display:flex; flex-direction:column; min-width:0; }
+  #modal .right h3{ margin:0 0 4px; font-size:16px; }
+  #modal .right .path{ font-size:11.5px; color:var(--text-dim); margin-bottom:6px; word-break:break-all; line-height:1.5; }
+  #modal .right .path:nth-of-type(2){ margin-bottom:16px; }
+  #modal .right .path b{ color:var(--text); font-weight:600; }
+  #modal pre{
+    flex:1; overflow:auto; background:rgba(255,255,255,0.04); border:1px solid var(--card-border);
+    border-radius:12px; padding:14px; font-size:12px; line-height:1.6; margin:0;
+    color:#d8f0ff; white-space:pre-wrap; word-break:break-word;
+  }
+  #modal .actions{ display:flex; gap:8px; margin-top:14px; }
+  #modal .actions a, #modal .actions button{
+    flex:1; text-align:center; padding:10px; border-radius:10px; font-size:12px; font-weight:600;
+    text-decoration:none; border:1px solid var(--card-border); background:rgba(255,255,255,0.06);
+    color:var(--text); cursor:pointer;
+  }
+  #modal .actions a:hover, #modal .actions button:hover{ background:rgba(255,255,255,0.12); }
+  #modal .close{
+    position:absolute; top:16px; right:16px; width:34px; height:34px; border-radius:50%;
+    background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:var(--text);
+    cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center;
+    z-index:5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">🎀</div>
+    <div class="brand-text">
+      <h1>Kawaii Gallery Wall</h1>
+      <p>Live from Hugging Face Dataset</p>
+    </div>
+  </div>
+  <div class="status">
+    <span id="count">0 works</span>
+    <span class="live"><span class="live-dot"></span>LIVE</span>
+    <div class="gear" id="gearBtn">⚙</div>
+  </div>
+</header>
+
+<div id="settings">
+  <label>Dataset Repo ID</label>
+  <input id="repoInput" type="text" value="akysExp/kawaii_dataset" spellcheck="false">
+  <label>更新間隔 (秒)</label>
+  <input id="intervalInput" type="number" value="20" min="5">
+  <button id="applyBtn">適用して再読み込み</button>
+  <p class="hint">public な HF Dataset リポジトリの ID を指定してください。プライベートなリポジトリは、ブラウザから直接読み込めません。</p>
+</div>
+
+<div id="wall"></div>
+
+<div id="empty" style="display:none;">
+  <h2>まだ作品がありません</h2>
+  <p id="emptyMsg">生成されたセッションがアップロードされると、ここに自動で表示されます。</p>
+</div>
+
+<div id="modal-bg">
+  <div id="modal">
+    <div class="close" id="closeBtn">✕</div>
+    <div class="left"><img id="modalImg" alt=""></div>
+    <div class="right">
+      <h3 id="modalCreator">設計図(Blueprint)</h3>
+      <div class="path"><b>画像ファイル：</b><span id="modalImgPath"></span></div>
+      <div class="path"><b>設計図(JSON)ファイル：</b><span id="modalBpPath"></span></div>
+      <pre id="modalJson">読み込み中...</pre>
+      <div class="actions">
+        <a id="openImgLink" target="_blank" rel="noopener">画像を新しいタブで開く</a>
+        <a id="openJsonLink" target="_blank" rel="noopener">JSONを新しいタブで開く</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  // 提供いただいた設定情報を反映しました
+  const firebaseConfig = {
+    apiKey: "AIzaSyCmhG1-myfsLaTFpFaDXXULmVC_xYtof8A",
+    authDomain: "kawaii-30e81.firebaseapp.com",
+    databaseURL: "https://kawaii-30e81-default-rtdb.firebaseio.com",
+    projectId: "kawaii-30e81",
+    storageBucket: "kawaii-30e81.firebasestorage.app",
+    messagingSenderId: "562917610519",
+    appId: "1:562917610519:web:02e0dd3f58a098db1f7852",
+    measurementId: "G-YRVCSN1XCM"
+  };
+  
+  let fbApp = null, fbDb = null, fbEnabled = false;
+  try{
+    fbApp = firebase.initializeApp(firebaseConfig);
+    fbDb = firebase.database();
+    fbEnabled = true;
+  }catch(e){
+    console.error("Firebase初期化に失敗:", e);
+  }
+</script>
+
+<script>
+const COLS = 3;
+let REPO_ID = document.getElementById('repoInput').value;
+let REFRESH_SEC = 20;
+let knownPaths = new Set();
+let columnItems = [[], [], []];
+let pollTimer = null;
+
+const wall = document.getElementById('wall');
+const countEl = document.getElementById('count');
+const emptyEl = document.getElementById('empty');
+const emptyMsg = document.getElementById('emptyMsg');
+
+function hfResolveUrl(repo, path){
+  return `https://huggingface.co/datasets/${repo}/resolve/main/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+function hfTreeUrl(repo){
+  return `https://huggingface.co/api/datasets/${repo}/tree/main?recursive=true`;
+}
+
+async function fetchTree(repo){
+  const res = await fetch(hfTreeUrl(repo));
+  if(!res.ok) throw new Error(`API error ${res.status}`);
+  return await res.json();
+}
+
+function pairImagesWithBlueprints(files){
+  const filePaths = new Set(files.filter(f => f.type === 'file').map(f => f.path));
+  const byDir = {};
+  filePaths.forEach(p => {
+    const dir = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+    (byDir[dir] ||= []).push(p);
+  });
+  const images = [...filePaths].filter(p => /\.(png|jpe?g|webp)$/i.test(p));
+
+  return images.map(imgPath => {
+    const dir = imgPath.includes('/') ? imgPath.slice(0, imgPath.lastIndexOf('/')) : '';
+    const base = imgPath.split('/').pop();
+    const m = base.match(/^img_(\d+)\.\w+$/i);
+    let bpPath = null;
+    if(m){
+      const candidate = (dir ? dir + '/' : '') + `bp_${m[1]}.json`;
+      if(filePaths.has(candidate)) bpPath = candidate;
+    }
+    if(!bpPath){
+      const jsonsInDir = (byDir[dir] || []).filter(p => p.endsWith('.json'));
+      bpPath = jsonsInDir.find(p => p.toLowerCase().includes('blueprint')) || jsonsInDir[0] || null;
+    }
+    return { image: imgPath, blueprint: bpPath };
+  }).sort((a, b) => a.image < b.image ? 1 : -1); 
+}
+
+function renderColumns(){
+  wall.innerHTML = '';
+  for(let c = 0; c < COLS; c++){
+    const col = document.createElement('div');
+    col.className = 'column';
+    const track = document.createElement('div');
+    track.className = 'track';
+
+    const items = columnItems[c];
+    if(items.length === 0){ wall.appendChild(col); continue; }
+
+    for(let rep = 0; rep < 2; rep++){
+      items.forEach(item => track.appendChild(buildCard(item)));
+    }
+
+    const durationSec = Math.max(18, items.length * 6);
+    track.style.animation = `flowDown ${durationSec}s linear infinite`;
+    track.style.animationDelay = `-${(durationSec * (c / COLS)).toFixed(2)}s`;
+
+    col.appendChild(track);
+    wall.appendChild(col);
+  }
+  updateVoteUI(); 
+}
+
+function buildCard(item){
+  const card = document.createElement('div');
+  card.className = 'card';
+  const voteKey = voteKeyFor(item.image);
+  card.dataset.voteKey = voteKey;
+
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  img.src = hfResolveUrl(REPO_ID, item.image);
+  img.alt = item.image;
+
+  const creatorBadge = document.createElement('div');
+  creatorBadge.className = 'creator-badge';
+  creatorBadge.innerHTML = `<span class="icon">🎨</span><span class="cname">…</span>`;
+  resolveCreatorName(item).then(nameStr => {
+    document.querySelectorAll(`.card[data-vote-key="${voteKey}"] .creator-badge .cname`)
+      .forEach(el => { el.textContent = nameStr; });
+  });
+
+  const voteBtn = document.createElement('div');
+  voteBtn.className = 'vote-btn';
+  voteBtn.innerHTML = `<span class="heart">💗</span><span class="vcount">0</span>`;
+  voteBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleVote(voteKey); });
+
+  const ribbon = document.createElement('div');
+  ribbon.className = 'ribbon';
+  ribbon.textContent = '🏆 1位';
+  ribbon.style.display = 'none';
+
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  const name = item.image.split('/').slice(-2).join(' / ');
+  cap.innerHTML = `<span>${escapeHtml(name)}</span><b>${item.blueprint ? '📋' : ''}</b>`;
+
+  card.appendChild(img);
+  card.appendChild(creatorBadge);
+  card.appendChild(voteBtn);
+  card.appendChild(ribbon);
+  card.appendChild(cap);
+  card.addEventListener('click', () => openModal(item));
+  return card;
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+async function refresh(){
+  try{
+    const tree = await fetchTree(REPO_ID);
+    const pairs = pairImagesWithBlueprints(tree);
+    if(pairs.length === 0){
+      emptyEl.style.display = 'flex';
+      emptyMsg.textContent = 'リポジトリは読み込めましたが、画像がまだ見つかりません。';
+      countEl.textContent = '0 works';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    countEl.textContent = `${pairs.length} works`;
+
+    const newPaths = pairs.map(p => p.image);
+    const hasChange = newPaths.length !== knownPaths.size || newPaths.some(p => !knownPaths.has(p));
+    if(!hasChange) return;
+
+    knownPaths = new Set(newPaths);
+    columnItems = [[], [], []];
+    pairs.forEach((item, i) => columnItems[i % COLS].push(item));
+    renderColumns();
+  }catch(e){
+    console.error(e);
+    emptyEl.style.display = 'flex';
+    emptyMsg.textContent = `読み込みに失敗しました: ${e.message} (リポジトリIDがpublicか、正しいか確認してください)`;
+  }
+}
+
+function sanitizeKey(str){
+  let h = 5381;
+  for(let i = 0; i < str.length; i++){ h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; }
+  const hex = h.toString(16);
+  const safe = str.replace(/[.$#\[\]\/\s]+/g, '_').slice(0, 40);
+  return `${safe}_${hex}`;
+}
+function voteKeyFor(imagePath){ return sanitizeKey(imagePath); }
+
+const DEVICE_LS_KEY = 'kawaii_gallery_device_id';
+let deviceId = localStorage.getItem(DEVICE_LS_KEY);
+if(!deviceId){
+  deviceId = 'dev_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  localStorage.setItem(DEVICE_LS_KEY, deviceId);
+}
+const LOCAL_VOTES_LS_KEY = 'kawaii_gallery_local_votes';
+let allVotes = {}; 
+
+function toggleVote(voteKey){
+  const already = !!(allVotes[voteKey] && allVotes[voteKey][deviceId]);
+
+  if(fbEnabled){
+    const ref = fbDb.ref(`votes/${voteKey}/${deviceId}`);
+    if(already){ ref.remove(); } else { ref.set(firebase.database.ServerValue.TIMESTAMP); }
+  }else{
+    allVotes[voteKey] = allVotes[voteKey] || {};
+    if(already){ delete allVotes[voteKey][deviceId]; }
+    else{ allVotes[voteKey][deviceId] = Date.now(); }
+    localStorage.setItem(LOCAL_VOTES_LS_KEY, JSON.stringify(allVotes));
+    updateVoteUI();
+  }
+}
+
+function updateVoteUI(){
+  let maxCount = 0;
+  const counts = {};
+  Object.keys(allVotes).forEach(k => {
+    counts[k] = Object.keys(allVotes[k] || {}).length;
+    if(counts[k] > maxCount) maxCount = counts[k];
+  });
+
+  document.querySelectorAll('.card[data-vote-key]').forEach(card => {
+    const key = card.dataset.voteKey;
+    const count = counts[key] || 0;
+    const voted = !!(allVotes[key] && allVotes[key][deviceId]);
+    const btn = card.querySelector('.vote-btn');
+    if(btn){
+      const vcount = btn.querySelector('.vcount');
+      if(vcount) vcount.textContent = count;
+      btn.classList.toggle('voted', voted);
+    }
+    const isLeader = maxCount > 0 && count === maxCount;
+    card.classList.toggle('leader', isLeader);
+    const ribbon = card.querySelector('.ribbon');
+    if(ribbon) ribbon.style.display = isLeader ? 'block' : 'none';
+  });
+}
+
+function initVoting(){
+  if(fbEnabled){
+    fbDb.ref('votes').on('value', (snapshot) => {
+      allVotes = snapshot.val() || {};
+      updateVoteUI();
+    }, (err) => console.error('Firebase読み取りエラー:', err));
+  }else{
+    try{ allVotes = JSON.parse(localStorage.getItem(LOCAL_VOTES_LS_KEY) || '{}'); }
+    catch{ allVotes = {}; }
+    updateVoteUI();
+  }
+}
+
+const CREATOR_FIELD_CANDIDATES = [
+  'creator', 'creator_name', 'author', 'author_name', 'name',
+  'nickname', 'user', 'user_name', 'participant', 'made_by',
+  '作者', 'お名前', '名前', '作成者', 'ニックネーム'
+];
+const creatorCache = new Map(); 
+
+function findCreatorNameInJson(obj){
+  if(!obj || typeof obj !== 'object') return null;
+  for(const key of CREATOR_FIELD_CANDIDATES){
+    if(typeof obj[key] === 'string' && obj[key].trim()) return obj[key].trim();
+  }
+  for(const v of Object.values(obj)){
+    if(v && typeof v === 'object' && !Array.isArray(v)){
+      for(const key of CREATOR_FIELD_CANDIDATES){
+        if(typeof v[key] === 'string' && v[key].trim()) return v[key].trim();
+      }
+    }
+  }
+  return null;
+}
+
+function guessCreatorFromPath(imagePath){
+  const dir = imagePath.includes('/') ? imagePath.split('/').slice(-2, -1)[0] : '';
+  if(!dir) return null;
+  const cleaned = dir.replace(/^(session|mk\d+_session|user)[_-]?/i, '')
+                      .replace(/\d{6,}/g, '') 
+                      .replace(/[_-]+/g, ' ').trim();
+  return cleaned || null;
+}
+
+async function resolveCreatorName(item){
+  if(creatorCache.has(item.image)) return creatorCache.get(item.image);
+  let creatorName = null;
+  if(item.blueprint){
+    try{
+      const res = await fetch(hfResolveUrl(REPO_ID, item.blueprint));
+      if(res.ok){
+        const json = await res.json();
+        creatorName = findCreatorNameInJson(json);
+      }
+    }catch(e){  }
+  }
+  if(!creatorName) creatorName = guessCreatorFromPath(item.image);
+  if(!creatorName) creatorName = '匿名';
+  creatorCache.set(item.image, creatorName);
+  return creatorName;
+}
+
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  refresh();
+  pollTimer = setInterval(refresh, REFRESH_SEC * 1000);
+}
+
+const modalBg = document.getElementById('modal-bg');
+const modalImg = document.getElementById('modalImg');
+const modalCreator = document.getElementById('modalCreator');
+const modalImgPath = document.getElementById('modalImgPath');
+const modalBpPath = document.getElementById('modalBpPath');
+const modalJson = document.getElementById('modalJson');
+const openImgLink = document.getElementById('openImgLink');
+const openJsonLink = document.getElementById('openJsonLink');
+
+async function openModal(item){
+  modalBg.classList.add('open');
+  modalImg.src = hfResolveUrl(REPO_ID, item.image);
+  modalImgPath.textContent = item.image;
+  modalBpPath.textContent = item.blueprint || '(見つかりませんでした)';
+  openImgLink.href = hfResolveUrl(REPO_ID, item.image);
+
+  modalCreator.textContent = '作者: 読み込み中…';
+  resolveCreatorName(item).then(n => { modalCreator.textContent = `作者: ${n}`; });
+
+  if(!item.blueprint){
+    modalJson.textContent = 'この作品には対応する設計図(JSON)が見つかりませんでした。';
+    openJsonLink.style.display = 'none';
+    return;
+  }
+  const jsonUrl = hfResolveUrl(REPO_ID, item.blueprint);
+  openJsonLink.style.display = 'block';
+  openJsonLink.href = jsonUrl;
+  modalJson.textContent = '読み込み中...';
+  try{
+    const res = await fetch(jsonUrl);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    try{ modalJson.textContent = JSON.stringify(JSON.parse(text), null, 2); }
+    catch{ modalJson.textContent = text; }
+  }catch(e){
+    modalJson.textContent = `⚠️ この場では読み込めませんでした(${e.message})。\n右下の「JSONを新しいタブで開く」から直接確認してください。`;
+  }
+}
+function closeModal(){ modalBg.classList.remove('open'); }
+document.getElementById('closeBtn').addEventListener('click', closeModal);
+modalBg.addEventListener('click', (e) => { if(e.target === modalBg) closeModal(); });
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeModal(); });
+
+const settingsEl = document.getElementById('settings');
+document.getElementById('gearBtn').addEventListener('click', () => settingsEl.classList.toggle('open'));
+document.getElementById('applyBtn').addEventListener('click', () => {
+  REPO_ID = document.getElementById('repoInput').value.trim();
+  REFRESH_SEC = Math.max(5, parseInt(document.getElementById('intervalInput').value, 10) || 20);
+  knownPaths = new Set();
+  settingsEl.classList.remove('open');
+  startPolling();
+});
+
+const styleTag = document.createElement('style');
+styleTag.textContent = `@keyframes flowDown { from { transform: translateY(-50%); } to { transform: translateY(0); } }`;
+document.head.appendChild(styleTag);
+
+initVoting();
+startPolling();
+</script>
+</body>
+</html>
