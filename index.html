@@ -63,41 +63,6 @@
   }
   .gear:hover{ background:rgba(255,255,255,0.1); color:var(--text); }
 
-  /* ── 作者バッジ(各カード左上、その作品を作った人の名前) ── */
-  .creator-badge{
-    position:absolute; top:9px; left:9px; z-index:3; max-width: calc(100% - 90px);
-    display:flex; align-items:center; gap:5px;
-    background: rgba(10,8,14,0.55); backdrop-filter: blur(6px);
-    border:1px solid rgba(255,255,255,0.18); border-radius:20px;
-    padding:5px 11px 5px 8px; font-size:12px; font-weight:700; color:var(--text);
-  }
-  .creator-badge .icon{ font-size:12px; flex-shrink:0; }
-  .creator-badge .cname{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-
-  /* ── 投票ボタン ── */
-  .card{ position:relative; }
-  .vote-btn{
-    position:absolute; top:9px; right:9px; z-index:3;
-    display:flex; align-items:center; gap:5px;
-    background: rgba(10,8,14,0.55); backdrop-filter: blur(6px);
-    border:1px solid rgba(255,255,255,0.18); border-radius:20px;
-    padding:6px 11px; cursor:pointer; font-size:13px; font-weight:700; color:var(--text);
-    transition: background 0.18s, transform 0.12s, border-color 0.18s;
-  }
-  .vote-btn:hover{ transform: scale(1.06); }
-  .vote-btn .heart{ font-size:14px; filter: grayscale(1); opacity:0.7; transition: filter 0.15s, opacity 0.15s, transform 0.15s; }
-  .vote-btn.voted{ background: rgba(255,143,194,0.22); border-color: rgba(255,143,194,0.7); }
-  .vote-btn.voted .heart{ filter:none; opacity:1; transform: scale(1.15); }
-  .vote-btn .vcount{ min-width:11px; text-align:left; }
-
-  .card.leader{ border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,143,194,0.5), 0 8px 30px rgba(255,143,194,0.25); }
-  .card.leader .ribbon{
-    position:absolute; top:46px; right:9px; z-index:3;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color:#1a1420; font-weight:800; font-size:11px; padding:5px 10px 5px 8px;
-    border-radius:20px; box-shadow: 0 4px 14px rgba(255,143,194,0.4);
-  }
-
   /* ── 設定パネル ── */
   #settings{
     position:fixed; top:78px; right:36px; z-index:60;
@@ -127,6 +92,10 @@
     padding: 110px 32px 32px 32px; height:100vh;
   }
   .column{ flex:1; overflow:hidden; position:relative; height:100%; mask-image: linear-gradient(to bottom, transparent 0, black 90px, black calc(100% - 40px), transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 90px, black calc(100% - 40px), transparent 100%); }
+  /* ── 一時停止中: アニメーションを止め、手動スクロール可能にする ── */
+  body.paused .track{ animation-play-state: paused !important; }
+  body.paused .column{ overflow-y:auto; scrollbar-width:thin; }
+  body.paused .live-dot{ background:#f2c94c; animation:none; }
   .track{ display:flex; flex-direction:column; gap:22px; will-change: transform; }
   .card{
     background: var(--card-bg); border:1px solid var(--card-border);
@@ -162,9 +131,7 @@
   #modal .left img{ max-width:100%; max-height:88vh; object-fit:contain; }
   #modal .right{ flex:1; padding:26px 26px 20px; display:flex; flex-direction:column; min-width:0; }
   #modal .right h3{ margin:0 0 4px; font-size:16px; }
-  #modal .right .path{ font-size:11.5px; color:var(--text-dim); margin-bottom:6px; word-break:break-all; line-height:1.5; }
-  #modal .right .path:nth-of-type(2){ margin-bottom:16px; }
-  #modal .right .path b{ color:var(--text); font-weight:600; }
+  #modal .right .path{ font-size:11px; color:var(--text-dim); margin-bottom:16px; word-break:break-all; }
   #modal pre{
     flex:1; overflow:auto; background:rgba(255,255,255,0.04); border:1px solid var(--card-border);
     border-radius:12px; padding:14px; font-size:12px; line-height:1.6; margin:0;
@@ -198,6 +165,7 @@
   <div class="status">
     <span id="count">0 works</span>
     <span class="live"><span class="live-dot"></span>LIVE</span>
+    <div class="gear" id="pauseBtn" title="自動スクロールを一時停止/再開">⏸</div>
     <div class="gear" id="gearBtn">⚙</div>
   </div>
 </header>
@@ -223,9 +191,8 @@
     <div class="close" id="closeBtn">✕</div>
     <div class="left"><img id="modalImg" alt=""></div>
     <div class="right">
-      <h3 id="modalCreator">設計図(Blueprint)</h3>
-      <div class="path"><b>画像ファイル：</b><span id="modalImgPath"></span></div>
-      <div class="path"><b>設計図(JSON)ファイル：</b><span id="modalBpPath"></span></div>
+      <h3>設計図(Blueprint)</h3>
+      <div class="path" id="modalPath"></div>
       <pre id="modalJson">読み込み中...</pre>
       <div class="actions">
         <a id="openImgLink" target="_blank" rel="noopener">画像を新しいタブで開く</a>
@@ -234,31 +201,6 @@
     </div>
   </div>
 </div>
-
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script>
-  // 提供いただいた設定情報を反映しました
-  const firebaseConfig = {
-    apiKey: "AIzaSyCmhG1-myfsLaTFpFaDXXULmVC_xYtof8A",
-    authDomain: "kawaii-30e81.firebaseapp.com",
-    databaseURL: "https://kawaii-30e81-default-rtdb.firebaseio.com",
-    projectId: "kawaii-30e81",
-    storageBucket: "kawaii-30e81.firebasestorage.app",
-    messagingSenderId: "562917610519",
-    appId: "1:562917610519:web:02e0dd3f58a098db1f7852",
-    measurementId: "G-YRVCSN1XCM"
-  };
-  
-  let fbApp = null, fbDb = null, fbEnabled = false;
-  try{
-    fbApp = firebase.initializeApp(firebaseConfig);
-    fbDb = firebase.database();
-    fbEnabled = true;
-  }catch(e){
-    console.error("Firebase初期化に失敗:", e);
-  }
-</script>
 
 <script>
 const COLS = 3;
@@ -298,18 +240,29 @@ function pairImagesWithBlueprints(files){
   return images.map(imgPath => {
     const dir = imgPath.includes('/') ? imgPath.slice(0, imgPath.lastIndexOf('/')) : '';
     const base = imgPath.split('/').pop();
-    const m = base.match(/^img_(\d+)\.\w+$/i);
+    const baseNoExt = base.replace(/\.\w+$/, '');
     let bpPath = null;
-    if(m){
-      const candidate = (dir ? dir + '/' : '') + `bp_${m[1]}.json`;
-      if(filePaths.has(candidate)) bpPath = candidate;
+
+    // 戦略1: 同じベース名の .json (例: tanaka-20260720-0.png -> tanaka-20260720-0.json)
+    const sameNameCandidate = (dir ? dir + '/' : '') + `${baseNoExt}.json`;
+    if(filePaths.has(sameNameCandidate)) bpPath = sameNameCandidate;
+
+    // 戦略2: img_NNN.png -> bp_NNN.json (セッション一括保存の命名規則)
+    if(!bpPath){
+      const m = base.match(/^img_(\d+)\.\w+$/i);
+      if(m){
+        const candidate = (dir ? dir + '/' : '') + `bp_${m[1]}.json`;
+        if(filePaths.has(candidate)) bpPath = candidate;
+      }
     }
+
+    // 戦略3: 同じディレクトリの blueprint*.json、それも無ければ任意の.json
     if(!bpPath){
       const jsonsInDir = (byDir[dir] || []).filter(p => p.endsWith('.json'));
       bpPath = jsonsInDir.find(p => p.toLowerCase().includes('blueprint')) || jsonsInDir[0] || null;
     }
     return { image: imgPath, blueprint: bpPath };
-  }).sort((a, b) => a.image < b.image ? 1 : -1); 
+  }).sort((a, b) => a.image < b.image ? 1 : -1); // 新しいものを先頭に
 }
 
 function renderColumns(){
@@ -323,6 +276,7 @@ function renderColumns(){
     const items = columnItems[c];
     if(items.length === 0){ wall.appendChild(col); continue; }
 
+    // シームレスループのため2周分描画
     for(let rep = 0; rep < 2; rep++){
       items.forEach(item => track.appendChild(buildCard(item)));
     }
@@ -334,47 +288,20 @@ function renderColumns(){
     col.appendChild(track);
     wall.appendChild(col);
   }
-  updateVoteUI(); 
 }
 
 function buildCard(item){
   const card = document.createElement('div');
   card.className = 'card';
-  const voteKey = voteKeyFor(item.image);
-  card.dataset.voteKey = voteKey;
-
   const img = document.createElement('img');
   img.loading = 'lazy';
   img.src = hfResolveUrl(REPO_ID, item.image);
   img.alt = item.image;
-
-  const creatorBadge = document.createElement('div');
-  creatorBadge.className = 'creator-badge';
-  creatorBadge.innerHTML = `<span class="icon">🎨</span><span class="cname">…</span>`;
-  resolveCreatorName(item).then(nameStr => {
-    document.querySelectorAll(`.card[data-vote-key="${voteKey}"] .creator-badge .cname`)
-      .forEach(el => { el.textContent = nameStr; });
-  });
-
-  const voteBtn = document.createElement('div');
-  voteBtn.className = 'vote-btn';
-  voteBtn.innerHTML = `<span class="heart">💗</span><span class="vcount">0</span>`;
-  voteBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleVote(voteKey); });
-
-  const ribbon = document.createElement('div');
-  ribbon.className = 'ribbon';
-  ribbon.textContent = '🏆 1位';
-  ribbon.style.display = 'none';
-
   const cap = document.createElement('div');
   cap.className = 'cap';
   const name = item.image.split('/').slice(-2).join(' / ');
   cap.innerHTML = `<span>${escapeHtml(name)}</span><b>${item.blueprint ? '📋' : ''}</b>`;
-
   card.appendChild(img);
-  card.appendChild(creatorBadge);
-  card.appendChild(voteBtn);
-  card.appendChild(ribbon);
   card.appendChild(cap);
   card.addEventListener('click', () => openModal(item));
   return card;
@@ -400,6 +327,7 @@ async function refresh(){
     const newPaths = pairs.map(p => p.image);
     const hasChange = newPaths.length !== knownPaths.size || newPaths.some(p => !knownPaths.has(p));
     if(!hasChange) return;
+    if(paused) return;  // ★一時停止中は再描画しない(手動閲覧を邪魔しないため)
 
     knownPaths = new Set(newPaths);
     columnItems = [[], [], []];
@@ -408,128 +336,8 @@ async function refresh(){
   }catch(e){
     console.error(e);
     emptyEl.style.display = 'flex';
-    emptyMsg.textContent = `読み込みに失敗しました: ${e.message} (リポジトリIDがpublicか、正しいか確認してください)`;
+    emptyMsg.textContent = `読み込みに失敗しました: ${e.message}　(リポジトリIDがpublicか、正しいか確認してください)`;
   }
-}
-
-function sanitizeKey(str){
-  let h = 5381;
-  for(let i = 0; i < str.length; i++){ h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; }
-  const hex = h.toString(16);
-  const safe = str.replace(/[.$#\[\]\/\s]+/g, '_').slice(0, 40);
-  return `${safe}_${hex}`;
-}
-function voteKeyFor(imagePath){ return sanitizeKey(imagePath); }
-
-const DEVICE_LS_KEY = 'kawaii_gallery_device_id';
-let deviceId = localStorage.getItem(DEVICE_LS_KEY);
-if(!deviceId){
-  deviceId = 'dev_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-  localStorage.setItem(DEVICE_LS_KEY, deviceId);
-}
-const LOCAL_VOTES_LS_KEY = 'kawaii_gallery_local_votes';
-let allVotes = {}; 
-
-function toggleVote(voteKey){
-  const already = !!(allVotes[voteKey] && allVotes[voteKey][deviceId]);
-
-  if(fbEnabled){
-    const ref = fbDb.ref(`votes/${voteKey}/${deviceId}`);
-    if(already){ ref.remove(); } else { ref.set(firebase.database.ServerValue.TIMESTAMP); }
-  }else{
-    allVotes[voteKey] = allVotes[voteKey] || {};
-    if(already){ delete allVotes[voteKey][deviceId]; }
-    else{ allVotes[voteKey][deviceId] = Date.now(); }
-    localStorage.setItem(LOCAL_VOTES_LS_KEY, JSON.stringify(allVotes));
-    updateVoteUI();
-  }
-}
-
-function updateVoteUI(){
-  let maxCount = 0;
-  const counts = {};
-  Object.keys(allVotes).forEach(k => {
-    counts[k] = Object.keys(allVotes[k] || {}).length;
-    if(counts[k] > maxCount) maxCount = counts[k];
-  });
-
-  document.querySelectorAll('.card[data-vote-key]').forEach(card => {
-    const key = card.dataset.voteKey;
-    const count = counts[key] || 0;
-    const voted = !!(allVotes[key] && allVotes[key][deviceId]);
-    const btn = card.querySelector('.vote-btn');
-    if(btn){
-      const vcount = btn.querySelector('.vcount');
-      if(vcount) vcount.textContent = count;
-      btn.classList.toggle('voted', voted);
-    }
-    const isLeader = maxCount > 0 && count === maxCount;
-    card.classList.toggle('leader', isLeader);
-    const ribbon = card.querySelector('.ribbon');
-    if(ribbon) ribbon.style.display = isLeader ? 'block' : 'none';
-  });
-}
-
-function initVoting(){
-  if(fbEnabled){
-    fbDb.ref('votes').on('value', (snapshot) => {
-      allVotes = snapshot.val() || {};
-      updateVoteUI();
-    }, (err) => console.error('Firebase読み取りエラー:', err));
-  }else{
-    try{ allVotes = JSON.parse(localStorage.getItem(LOCAL_VOTES_LS_KEY) || '{}'); }
-    catch{ allVotes = {}; }
-    updateVoteUI();
-  }
-}
-
-const CREATOR_FIELD_CANDIDATES = [
-  'creator', 'creator_name', 'author', 'author_name', 'name',
-  'nickname', 'user', 'user_name', 'participant', 'made_by',
-  '作者', 'お名前', '名前', '作成者', 'ニックネーム'
-];
-const creatorCache = new Map(); 
-
-function findCreatorNameInJson(obj){
-  if(!obj || typeof obj !== 'object') return null;
-  for(const key of CREATOR_FIELD_CANDIDATES){
-    if(typeof obj[key] === 'string' && obj[key].trim()) return obj[key].trim();
-  }
-  for(const v of Object.values(obj)){
-    if(v && typeof v === 'object' && !Array.isArray(v)){
-      for(const key of CREATOR_FIELD_CANDIDATES){
-        if(typeof v[key] === 'string' && v[key].trim()) return v[key].trim();
-      }
-    }
-  }
-  return null;
-}
-
-function guessCreatorFromPath(imagePath){
-  const dir = imagePath.includes('/') ? imagePath.split('/').slice(-2, -1)[0] : '';
-  if(!dir) return null;
-  const cleaned = dir.replace(/^(session|mk\d+_session|user)[_-]?/i, '')
-                      .replace(/\d{6,}/g, '') 
-                      .replace(/[_-]+/g, ' ').trim();
-  return cleaned || null;
-}
-
-async function resolveCreatorName(item){
-  if(creatorCache.has(item.image)) return creatorCache.get(item.image);
-  let creatorName = null;
-  if(item.blueprint){
-    try{
-      const res = await fetch(hfResolveUrl(REPO_ID, item.blueprint));
-      if(res.ok){
-        const json = await res.json();
-        creatorName = findCreatorNameInJson(json);
-      }
-    }catch(e){  }
-  }
-  if(!creatorName) creatorName = guessCreatorFromPath(item.image);
-  if(!creatorName) creatorName = '匿名';
-  creatorCache.set(item.image, creatorName);
-  return creatorName;
 }
 
 function startPolling(){
@@ -538,11 +346,10 @@ function startPolling(){
   pollTimer = setInterval(refresh, REFRESH_SEC * 1000);
 }
 
+/* ── モーダル ── */
 const modalBg = document.getElementById('modal-bg');
 const modalImg = document.getElementById('modalImg');
-const modalCreator = document.getElementById('modalCreator');
-const modalImgPath = document.getElementById('modalImgPath');
-const modalBpPath = document.getElementById('modalBpPath');
+const modalPath = document.getElementById('modalPath');
 const modalJson = document.getElementById('modalJson');
 const openImgLink = document.getElementById('openImgLink');
 const openJsonLink = document.getElementById('openJsonLink');
@@ -550,12 +357,8 @@ const openJsonLink = document.getElementById('openJsonLink');
 async function openModal(item){
   modalBg.classList.add('open');
   modalImg.src = hfResolveUrl(REPO_ID, item.image);
-  modalImgPath.textContent = item.image;
-  modalBpPath.textContent = item.blueprint || '(見つかりませんでした)';
+  modalPath.textContent = item.image;
   openImgLink.href = hfResolveUrl(REPO_ID, item.image);
-
-  modalCreator.textContent = '作者: 読み込み中…';
-  resolveCreatorName(item).then(n => { modalCreator.textContent = `作者: ${n}`; });
 
   if(!item.blueprint){
     modalJson.textContent = 'この作品には対応する設計図(JSON)が見つかりませんでした。';
@@ -581,8 +384,34 @@ document.getElementById('closeBtn').addEventListener('click', closeModal);
 modalBg.addEventListener('click', (e) => { if(e.target === modalBg) closeModal(); });
 document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeModal(); });
 
+/* ── 設定パネル ── */
 const settingsEl = document.getElementById('settings');
 document.getElementById('gearBtn').addEventListener('click', () => settingsEl.classList.toggle('open'));
+
+/* ── ⏸/▶ 自動スクロールの一時停止・手動スクロール ── */
+const pauseBtn = document.getElementById('pauseBtn');
+let paused = false;
+function setPaused(p){
+  paused = p;
+  document.body.classList.toggle('paused', paused);
+  pauseBtn.textContent = paused ? '▶' : '⏸';
+  if(paused){
+    // 停止時: アニメーションの現在位置を実座標に固定してから手動スクロールに切替
+    document.querySelectorAll('.track').forEach(track => {
+      const st = getComputedStyle(track);
+      const m = new DOMMatrixReadOnly(st.transform === 'none' ? '' : st.transform);
+      track.style.animation = 'none';
+      track.style.transform = `translateY(${m.m42}px)`;
+    });
+  }else{
+    // 再開時: 列を再構築してアニメーションを復元
+    renderColumns();
+  }
+}
+pauseBtn.addEventListener('click', () => setPaused(!paused));
+// ホイール/タッチ操作が始まったら自動的に一時停止(見たい作品で止めやすく)
+document.getElementById('wall').addEventListener('wheel', () => { if(!paused) setPaused(true); }, {passive:true});
+document.getElementById('wall').addEventListener('touchmove', () => { if(!paused) setPaused(true); }, {passive:true});
 document.getElementById('applyBtn').addEventListener('click', () => {
   REPO_ID = document.getElementById('repoInput').value.trim();
   REFRESH_SEC = Math.max(5, parseInt(document.getElementById('intervalInput').value, 10) || 20);
@@ -591,11 +420,11 @@ document.getElementById('applyBtn').addEventListener('click', () => {
   startPolling();
 });
 
+/* keyframes を動的に注入(CSS変数化のため) */
 const styleTag = document.createElement('style');
 styleTag.textContent = `@keyframes flowDown { from { transform: translateY(-50%); } to { transform: translateY(0); } }`;
 document.head.appendChild(styleTag);
 
-initVoting();
 startPolling();
 </script>
 </body>
