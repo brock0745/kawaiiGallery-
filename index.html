@@ -86,6 +86,18 @@
   }
   #settings .hint{ font-size:11px; color:var(--text-dim); line-height:1.5; }
 
+  /* ── ★「remove」入力で有効になる非表示モード ── */
+  .card{ position:relative; }
+  body.hide-mode .card{ cursor:not-allowed; }
+  body.hide-mode .card:hover{ outline:3px solid #ff4d6d; outline-offset:-3px; }
+  #hideModeToast{
+    position:fixed; top:90px; left:50%; transform:translateX(-50%);
+    background:#ff4d6d; color:#fff; font-weight:700; font-size:14px;
+    padding:10px 20px; border-radius:999px; z-index:80; display:none;
+    box-shadow:0 8px 24px rgba(255,77,109,0.4);
+  }
+  #hideModeToast.show{ display:block; }
+
   /* ── ギャラリー本体 ── */
   #wall{
     position:fixed; inset:0; display:flex; gap:22px;
@@ -170,6 +182,8 @@
   </div>
 </header>
 
+<div id="hideModeToast">🙈 ひじょうモード中：けしたい画像をタップ（Escで解除）</div>
+
 <div id="settings">
   <label>Dataset Repo ID</label>
   <input id="repoInput" type="text" value="akysExp/kawaii_dataset" spellcheck="false">
@@ -177,11 +191,13 @@
   <input id="intervalInput" type="number" value="20" min="5">
   <button id="applyBtn">適用して再読み込み</button>
   <p class="hint">public な HF Dataset リポジトリの ID を指定してください。プライベートなリポジトリは、ブラウザから直接読み込めません。</p>
+  <p class="hint">🙈 キーボードで「remove」と入力すると、画面からその場で画像を隠せます(このブラウザだけの表示上の非表示で、Hugging Face上のデータそのものは消えません)。</p>
 </div>
 
 <div id="wall"></div>
 
 <div id="empty" style="display:none;">
+
   <h2>まだ作品がありません</h2>
   <p id="emptyMsg">生成されたセッションがアップロードされると、ここに自動で表示されます。</p>
 </div>
@@ -267,6 +283,12 @@ function pairImagesWithBlueprints(files){
 
 function renderColumns(){
   wall.innerHTML = '';
+  // ★全列を同じ速さ・同じタイミングで動かす(段違いの「滝」演出をやめて、
+  //   横一列が揃って流れるようにする)。列ごとの枚数差の影響を受けないよう、
+  //   一番枚数が多い列を基準に、全列共通の1つの duration を使う。
+  const maxItems = Math.max(1, ...columnItems.map(items => items.length));
+  const sharedDurationSec = Math.max(18, maxItems * 6);
+
   for(let c = 0; c < COLS; c++){
     const col = document.createElement('div');
     col.className = 'column';
@@ -281,9 +303,8 @@ function renderColumns(){
       items.forEach(item => track.appendChild(buildCard(item)));
     }
 
-    const durationSec = Math.max(18, items.length * 6);
-    track.style.animation = `flowDown ${durationSec}s linear infinite`;
-    track.style.animationDelay = `-${(durationSec * (c / COLS)).toFixed(2)}s`;
+    track.style.animation = `flowDown ${sharedDurationSec}s linear infinite`;
+    track.style.animationDelay = '0s';
 
     col.appendChild(track);
     wall.appendChild(col);
@@ -303,7 +324,11 @@ function buildCard(item){
   cap.innerHTML = `<span>${escapeHtml(name)}</span><b>${item.blueprint ? '📋' : ''}</b>`;
   card.appendChild(img);
   card.appendChild(cap);
-  card.addEventListener('click', () => openModal(item));
+  // ★「remove」入力で非表示モード中はタップで即座に画面から隠す。
+  //   通常時は今まで通りモーダルで設計図を表示する。
+  card.addEventListener('click', () => {
+    if(hideMode){ hideItem(item); } else { openModal(item); }
+  });
   return card;
 }
 
@@ -314,7 +339,9 @@ function escapeHtml(s){
 async function refresh(){
   try{
     const tree = await fetchTree(REPO_ID);
-    const pairs = pairImagesWithBlueprints(tree);
+    let pairs = pairImagesWithBlueprints(tree);
+    // ★「remove」で非表示にした作品は、再取得時にも除外する(このブラウザだけ)
+    pairs = pairs.filter(p => !hiddenPaths.has(p.image));
     if(pairs.length === 0){
       emptyEl.style.display = 'flex';
       emptyMsg.textContent = 'リポジトリは読み込めましたが、画像がまだ見つかりません。';
@@ -419,6 +446,44 @@ document.getElementById('applyBtn').addEventListener('click', () => {
   settingsEl.classList.remove('open');
   startPolling();
 });
+
+/* ── ★「remove」とキーボードで打つと非表示モードが有効になる ── */
+// このブラウザの画面上で即座に隠すだけの、認証不要の簡易機能。
+// Hugging Face上のDatasetからは削除されない(リロードすれば元に戻る、
+// 他の端末には影響しない)。「その場をしのぐ」用の応急処置。
+let hideMode = false;
+let hiddenPaths = new Set();
+let _keyBuffer = '';
+const _hideToast = document.getElementById('hideModeToast');
+
+function setHideMode(on){
+  hideMode = on;
+  _hideToast.classList.toggle('show', hideMode);
+  document.body.classList.toggle('hide-mode', hideMode);
+}
+
+document.addEventListener('keydown', (e) => {
+  // 入力欄にフォーカスがある時は誤爆しないようにする
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if(tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  if(e.key === 'Escape'){ setHideMode(false); return; }
+  if(e.key.length === 1){
+    _keyBuffer = (_keyBuffer + e.key.toLowerCase()).slice(-6); // "remove"は6文字
+    if(_keyBuffer === 'remove'){
+      setHideMode(!hideMode);
+      _keyBuffer = '';
+    }
+  }
+});
+
+function hideItem(item){
+  hiddenPaths.add(item.image);
+  columnItems = columnItems.map(col => col.filter(x => x.image !== item.image));
+  knownPaths.delete(item.image);
+  renderColumns();
+  countEl.textContent = `${knownPaths.size} works`;
+}
 
 /* keyframes を動的に注入(CSS変数化のため) */
 const styleTag = document.createElement('style');
