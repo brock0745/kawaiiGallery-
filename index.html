@@ -310,9 +310,34 @@ function hfTreeUrl(repo){
 }
 
 async function fetchTree(repo){
-  const res = await fetch(hfTreeUrl(repo));
-  if(!res.ok) throw new Error(`API error ${res.status}`);
-  return await res.json();
+  // ★HFのtree APIは、ファイル数が多いリポジトリだと1回のレスポンスで
+  //   全件を返しきれず、続きがある場合はレスポンスの Link ヘッダーに
+  //   次ページのURLが入る(rel="next")。これを追いかけずに1回だけ
+  //   fetchしていたため、大規模リポジトリで件数が実際より少なく
+  //   表示される不具合があった。ここでは続きが無くなるまで繰り返し取得し、
+  //   結果を1つの配列に結合する。
+  let url = hfTreeUrl(repo);
+  let all = [];
+  let pageCount = 0;
+  while(url){
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`API error ${res.status}`);
+    const page = await res.json();
+    all = all.concat(page);
+    pageCount++;
+
+    // Linkヘッダーから rel="next" のURLを取り出す(無ければ終了)
+    const linkHeader = res.headers.get('Link');
+    url = null;
+    if(linkHeader){
+      const m = linkHeader.match(/<([^>]+)>\s*;\s*rel="next"/);
+      if(m) url = m[1];
+    }
+    // ★安全弁: 万が一の無限ループ防止(通常のリポジトリ規模なら数ページで収まる)
+    if(pageCount > 50) { console.warn('fetchTree: ページ数が異常に多いため打ち切りました'); break; }
+  }
+  console.log(`fetchTree: ${pageCount}ページ取得、合計${all.length}件`);
+  return all;
 }
 
 function pairImagesWithBlueprints(files){
