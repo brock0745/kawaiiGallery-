@@ -392,13 +392,36 @@ async function fetchTree(repo){
 }
 
 function pairImagesWithBlueprints(files){
-  const filePaths = new Set(files.filter(f => f.type === 'file').map(f => f.path));
+  const fileList = files.filter(f => f.type === 'file');
+  const filePaths = new Set(fileList.map(f => f.path));
   const byDir = {};
   filePaths.forEach(p => {
     const dir = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
     (byDir[dir] ||= []).push(p);
   });
-  const images = [...filePaths].filter(p => /\.(png|jpe?g|webp)$/i.test(p));
+  let images = fileList
+    .filter(f => /\.(png|jpe?g|webp)$/i.test(f.path))
+    .map(f => f.path);
+
+  // ★同じ生成画像が、セッションまとめ保存(xxx-session_.../2d/img_NNN.png)と
+  //   ギャラリー用フラット保存(generated/xxx/xxx-timestamp-n.png)の
+  //   両方に、まったく同じ内容(oid)でアップロードされている実装のため、
+  //   何もしないとギャラリーに同じ作品が2回表示されてしまう。
+  //   oid(内容のハッシュ)ごとに1件だけ残す。"generated/"配下のパスが
+  //   あればそちらを優先する(ファイル名から作者名を直接取れて扱いやすいため)。
+  const byOid = new Map(); // oid -> path
+  fileList.forEach(f => {
+    if(!/\.(png|jpe?g|webp)$/i.test(f.path) || !f.oid) return;
+    const existing = byOid.get(f.oid);
+    if(!existing){
+      byOid.set(f.oid, f.path);
+    } else {
+      const existingIsGenerated = existing.startsWith('generated/');
+      const currentIsGenerated = f.path.startsWith('generated/');
+      if(currentIsGenerated && !existingIsGenerated) byOid.set(f.oid, f.path);
+    }
+  });
+  images = [...new Set(byOid.values())];
 
   return images.map(imgPath => {
     const dir = imgPath.includes('/') ? imgPath.slice(0, imgPath.lastIndexOf('/')) : '';
@@ -650,15 +673,22 @@ function extractCreatorFromPath(imagePath){
     if(m && m[1]) return m[1];
   }
 
-  // パターンB: 直上のディレクトリ名が "ユーザー名-session_タイムスタンプ" 形式
+  // パターンB: 直上(または、2d/3dサブフォルダの1つ上)のディレクトリ名が
+  //   "ユーザー名-session_タイムスタンプ" 形式
   //   (mk9_タイムスタンプ も同様に扱う)
-  if(parts.length >= 2){
-    const dirName = parts[parts.length - 2];
+  //   ★セッション終了時のまとめ保存は
+  //     {ユーザー名}-session_{タイムスタンプ}/2d/img_NNN.png という
+  //     構造になっており、直上フォルダが"2d"のため以前は検出できていなかった。
+  //     "2d"/"3d"という既知の中間フォルダだけはスキップして、その上を見る。
+  for(let i = parts.length - 2; i >= 0; i--){
+    const dirName = parts[i];
+    if(dirName === '2d' || dirName === '3d') continue;
     const m2 = dirName.match(/^([^-]+)-session/i);
     if(m2 && m2[1]) return m2[1];
     // パターンC: generated/{ユーザー名}/... のように、ディレクトリ名が
     //   そのままユーザー名になっているケース
-    if(parts.length >= 3 && parts[parts.length - 3] === 'generated') return dirName;
+    if(i >= 1 && parts[i - 1] === 'generated') return dirName;
+    break; // 2d/3d以外の階層に着いたら、そこで判定を打ち切る
   }
   return null;
 }
