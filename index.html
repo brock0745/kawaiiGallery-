@@ -147,10 +147,14 @@
   .vote-btn .heart{ font-size:14px; filter: grayscale(1); opacity:0.7; transition: filter 0.15s, opacity 0.15s, transform 0.15s; }
   .vote-btn.voted{ background: rgba(255,143,194,0.22); border-color: rgba(255,143,194,0.7); }
   .vote-btn.voted .heart{ filter:none; opacity:1; transform: scale(1.15); }
-  .vote-btn .vcount{ min-width:11px; text-align:left; }
+  /* ★標準では票数を見せない(投票はできるが、数字・順位は「result」コマンドで
+     結果発表するまで隠す)。ハート自体の色は「自分が投票したか」の目印として
+     引き続き機能させる。 */
+  .vote-btn .vcount{ display:none; }
 
-  .card.leader{ border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,143,194,0.5), 0 8px 30px rgba(255,143,194,0.25); }
+  .card.leader{ border-color: inherit !important; box-shadow: none !important; }
   .card.leader .ribbon{
+    display:none !important;
     position:absolute; top:46px; right:9px; z-index:3;
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color:#1a1420; font-weight:800; font-size:11px; padding:5px 10px 5px 8px;
@@ -202,6 +206,41 @@
     cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center;
     z-index:5;
   }
+
+  /* ★「result」の隠しコマンドで出す結果発表画面。3位→2位→1位の順にめくる。 */
+  #result-overlay{
+    position:fixed; inset:0; background:rgba(6,5,10,0.94); backdrop-filter: blur(10px);
+    display:none; align-items:center; justify-content:center; z-index:200; padding:40px;
+    flex-direction:column; text-align:center;
+  }
+  #result-overlay.open{ display:flex; animation: fadeIn 0.25s ease; }
+  #result-overlay .rank-label{
+    font-size:clamp(28px, 6vw, 64px); font-weight:800; margin-bottom:18px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation: pop 0.35s ease;
+  }
+  #result-overlay .rank-img{
+    max-width:min(70vw, 640px); max-height:56vh; object-fit:contain;
+    border-radius:20px; box-shadow: 0 30px 90px rgba(0,0,0,0.7); animation: pop 0.35s ease;
+  }
+  #result-overlay .rank-meta{ margin-top:16px; font-size:16px; color:var(--text-dim); animation: pop 0.35s ease; }
+  #result-overlay .rank-votes{ font-size:20px; font-weight:800; color:var(--text); margin-top:4px; }
+  #result-overlay .rank-nav{ display:flex; gap:12px; margin-top:28px; }
+  #result-overlay button{
+    padding:12px 28px; border-radius:14px; font-size:15px; font-weight:700; cursor:pointer;
+    border:1px solid var(--card-border); background:rgba(255,255,255,0.08); color:var(--text);
+  }
+  #result-overlay button.primary{
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#1a1420; border:none;
+  }
+  #result-overlay button:hover{ filter:brightness(1.08); }
+  #result-overlay .close{
+    position:absolute; top:20px; right:24px; width:40px; height:40px; border-radius:50%;
+    background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:var(--text);
+    cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center;
+  }
+  #result-overlay .empty-note{ font-size:16px; color:var(--text-dim); }
 </style>
 </head>
 <body>
@@ -223,6 +262,18 @@
 </header>
 
 <div id="hideModeToast">🙈 ひじょうモード中：けしたい画像をタップ（Escで解除）</div>
+
+<div id="result-overlay">
+  <div class="close" id="resultCloseBtn">✕</div>
+  <div class="rank-label" id="resultRankLabel"></div>
+  <img class="rank-img" id="resultRankImg" alt="">
+  <div class="rank-meta" id="resultRankMeta"></div>
+  <div class="rank-votes" id="resultRankVotes"></div>
+  <div class="rank-nav">
+    <button id="resultPrevBtn">◀ もどる</button>
+    <button class="primary" id="resultNextBtn">つぎへ ▶</button>
+  </div>
+</div>
 
 <div id="settings">
   <label>Dataset Repo ID</label>
@@ -743,11 +794,14 @@ document.addEventListener('keydown', (e) => {
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if(tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-  if(e.key === 'Escape'){ setHideMode(false); return; }
+  if(e.key === 'Escape'){ setHideMode(false); closeResults(); return; }
   if(e.key.length === 1){
-    _keyBuffer = (_keyBuffer + e.key.toLowerCase()).slice(-6); // "remove"は6文字
+    _keyBuffer = (_keyBuffer + e.key.toLowerCase()).slice(-6); // "remove"/"result"は共に6文字
     if(_keyBuffer === 'remove'){
       setHideMode(!hideMode);
+      _keyBuffer = '';
+    } else if(_keyBuffer === 'result'){
+      openResults();
       _keyBuffer = '';
     }
   }
@@ -760,6 +814,85 @@ function hideItem(item){
   renderTrack();
   countEl.textContent = `${knownPaths.size} works`;
 }
+
+/* ── ★「result」とキーボードで打つと結果発表画面が開く ── */
+// 票数は普段は隠しておき、この画面でだけ3位→2位→1位の順にめくって見せる。
+const resultOverlay = document.getElementById('result-overlay');
+const resultRankLabel = document.getElementById('resultRankLabel');
+const resultRankImg = document.getElementById('resultRankImg');
+const resultRankMeta = document.getElementById('resultRankMeta');
+const resultRankVotes = document.getElementById('resultRankVotes');
+const resultPrevBtn = document.getElementById('resultPrevBtn');
+const resultNextBtn = document.getElementById('resultNextBtn');
+const resultCloseBtn = document.getElementById('resultCloseBtn');
+const RANK_EMOJI = ['🥇 1位', '🥈 2位', '🥉 3位']; // インデックス0=1位
+
+let _resultRanking = [];  // [{item, count, name}, ...] 上位順(0番目が1位)
+let _resultStep = 0;      // 表示ステップ。0='まだ3位すら見せていない'開始状態として使う
+
+function computeRanking(topN){
+  const counts = {};
+  Object.keys(allVotes).forEach(k => { counts[k] = Object.keys(allVotes[k] || {}).length; });
+
+  const withVotes = allItems
+    .map(item => ({ item, count: counts[voteKeyFor(item.image)] || 0 }))
+    .filter(x => x.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  return withVotes.slice(0, topN);
+}
+
+async function openResults(){
+  _resultRanking = computeRanking(3);
+  // 名前を先に解決しておく(表示のたびに待たせないため)
+  await Promise.all(_resultRanking.map(async (r) => {
+    r.name = await resolveCreatorName(r.item);
+  }));
+  resultOverlay.classList.add('open');
+
+  if(_resultRanking.length === 0){
+    resultRankLabel.textContent = '';
+    resultRankImg.style.display = 'none';
+    resultRankMeta.textContent = '';
+    resultRankVotes.textContent = '';
+    resultRankMeta.innerHTML = '<span class="empty-note">まだ投票がありません🙏</span>';
+    resultPrevBtn.style.display = 'none';
+    resultNextBtn.style.display = 'none';
+    return;
+  }
+  resultPrevBtn.style.display = '';
+  resultNextBtn.style.display = '';
+  // 表示は「低い順位から」なので、ランキング配列の末尾(=最下位、3位相当)から始める
+  _resultStep = _resultRanking.length - 1;
+  renderResultStep();
+}
+
+function renderResultStep(){
+  const entry = _resultRanking[_resultStep];
+  if(!entry) return;
+  resultRankLabel.textContent = RANK_EMOJI[_resultStep] || `${_resultStep + 1}位`;
+  resultRankImg.style.display = '';
+  resultRankImg.src = hfResolveUrl(REPO_ID, entry.item.image);
+  resultRankMeta.textContent = `🎨 ${entry.name || 'guest'}`;
+  resultRankVotes.textContent = `💗 ${entry.count} 票`;
+
+  // 1位を表示しきったら「つぎへ」は出せない。最下位(配列末尾)より後ろにも戻れない。
+  resultNextBtn.disabled = (_resultStep === 0);
+  resultNextBtn.style.visibility = (_resultStep === 0) ? 'hidden' : 'visible';
+  resultPrevBtn.disabled = (_resultStep === _resultRanking.length - 1);
+  resultPrevBtn.style.visibility = (_resultStep === _resultRanking.length - 1) ? 'hidden' : 'visible';
+}
+
+resultNextBtn.addEventListener('click', () => {
+  if(_resultStep > 0){ _resultStep--; renderResultStep(); }
+});
+resultPrevBtn.addEventListener('click', () => {
+  if(_resultStep < _resultRanking.length - 1){ _resultStep++; renderResultStep(); }
+});
+resultCloseBtn.addEventListener('click', closeResults);
+resultOverlay.addEventListener('click', (e) => { if(e.target === resultOverlay) closeResults(); });
+
+function closeResults(){ resultOverlay.classList.remove('open'); }
 
 /* keyframes を動的に注入(CSS変数化のため) */
 const styleTag = document.createElement('style');
